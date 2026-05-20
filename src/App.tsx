@@ -116,9 +116,11 @@ const App: React.FC = () => {
           setProfiles(list);
           
           if (list.length > 0) {
-              const recent = list[0];
-              setActiveProfileId(recent.id);
-              await loadProfileData(recent.id);
+              const storedProfileId = localStorage.getItem('archive_active_profile_id');
+              const targetProfile = list.find(p => p.id === storedProfileId) || list[0];
+              
+              setActiveProfileId(targetProfile.id);
+              await loadProfileData(targetProfile.id);
           } else {
               setIsProfileLoading(false);
               setIsChatReady(true);
@@ -137,7 +139,14 @@ const App: React.FC = () => {
       try {
           const data = await getProfileData(id);
           setConversations(data);
-          setActiveConversationId(data.length > 0 ? "0" : null);
+          
+          const storedConvId = localStorage.getItem('archive_active_conversation_id');
+          if (storedConvId && parseInt(storedConvId) < data.length) {
+              setActiveConversationId(storedConvId);
+          } else {
+              setActiveConversationId(data.length > 0 ? "0" : null);
+          }
+          
           setSecondaryConversationId(null);
           
           if (workerRef.current) {
@@ -156,8 +165,8 @@ const App: React.FC = () => {
     if (workerRef.current) {
         const handler = async (e: MessageEvent) => {
             if (e.data.type === 'SUCCESS') {
-                const { conversations: sorted } = e.data;
-                const name = `Export ${new Date().toLocaleDateString()}`;
+                const { conversations: sorted, profileType } = e.data;
+                const name = `${profileType || 'ChatGPT'} Export ${new Date().toLocaleDateString()}`;
                 const newProfile = await addProfile(name, sorted);
                 
                 setProfiles([newProfile, ...profiles]);
@@ -243,7 +252,7 @@ const App: React.FC = () => {
   const secondaryConversation = secondaryConversationId !== null ? conversations[parseInt(secondaryConversationId)] : null;
 
   // Show loading overlay
-  const showLoadingOverlay = (isProfileLoading || !isChatReady) && currentView !== 'import';
+  const showLoadingOverlay = (isProfileLoading || (!isChatReady && currentView === 'chat')) && currentView !== 'import';
 
   const renderMainContent = () => {
       switch (currentView) {

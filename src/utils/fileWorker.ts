@@ -43,10 +43,16 @@ export const fileWorkerScript = () => {
               const contentParts = node.message.content.parts;
               contentParts.forEach((part: any) => {
                 if (typeof part === 'string') {
-                  parts.push(part);
+                  // limit string to avoid memory blowup on huge logs
+                  parts.push(part.substring(0, 10000));
                 } else if (typeof part === 'object') {
-                   if ('text' in part && typeof part.text === 'string') {
-                     parts.push(part.text);
+                   // Skips stringifying massive tool results for search
+                   if (part.type === 'tool_result' || part.type === 'tool_use' || part.type === 'artifact') return;
+                   
+                   if (part.type === 'thinking' && typeof part.thinking === 'string') {
+                     parts.push(part.thinking.substring(0, 10000));
+                   } else if ('text' in part && typeof part.text === 'string') {
+                     parts.push(part.text.substring(0, 10000));
                    } 
                    else if ('content_type' in part && part.content_type === 'audio_transcription') {
                      parts.push(part.text);
@@ -247,7 +253,7 @@ export const fileWorkerScript = () => {
                             parts.forEach((p: any) => {
                                 let text = '';
                                 if (typeof p === 'string') text = p;
-                                else if (p.text) text = p.text;
+                                else if (p.text && p.type !== 'tool_result') text = p.text.substring(0, 20000); // cap size for word computing
                                 
                                 if (text) totalUserWords += processWords(text, userWordCounts);
                             });
@@ -257,7 +263,8 @@ export const fileWorkerScript = () => {
                             parts.forEach((p: any) => {
                                 let text = '';
                                 if (typeof p === 'string') text = p;
-                                else if (p.text) text = p.text;
+                                else if (p.type === 'thinking' && typeof p.thinking === 'string') text = p.thinking.substring(0, 20000);
+                                else if (p.text && p.type !== 'tool_result' && p.type !== 'tool_use') text = p.text.substring(0, 20000);
 
                                 if (text) totalModelWords += processWords(text, modelWordCounts);
                             });
@@ -318,18 +325,151 @@ export const fileWorkerScript = () => {
         if (e.data.file) {
             try {
                 const { file } = e.data;
-                const text = await file.text();
-                let data = JSON.parse(text);
+                let text = await file.text();
+                let rawData = JSON.parse(text);
                 
-                if (!Array.isArray(data)) {
-                    if (data.mapping) {
-                        data = [data];
+                let data: any[] = [];
+                let profileType = 'ChatGPT';
+
+                // Check if it's Claude
+                const isClaude = Array.isArray(rawData) && rawData.length > 0 && ('chat_messages' in rawData[0] || 'uuid' in rawData[0]);
+
+                if (isClaude) {
+                    profileType = 'Claude';
+                    data = rawData.map((conv: any) => {
+                        const mapping: Record<string, any> = {};
+                        
+                        const messages = Array.isArray(conv.chat_messages) ? conv.chat_messages : [];
+                        
+                        // First pass: create all nodes
+                        messages.forEach((msg: any) => {
+                            const msgId = msg.uuid;
+                            const parentId = msg.parent_message_uuid !== "00000000-0000-4000-8000-000000000000" ? msg.parent_message_uuid : null;
+                            const role = msg.sender === 'human' ? 'user' : 'assistant';
+                            const createTime = msg.created_at ? new Date(msg.created_at).getTime() / 1000 : 0;
+                            const updateTime = msg.updated_at ? new Date(msg.updated_at).getTime() / 1000 : 0;
+
+                            let contentParts: any[] = [];
+                            if (Array.isArray(msg.content)) {
+                                contentParts = msg.content.map((c: any) => {
+                                    if (typeof c === 'string') return c;
+                                    if (c && typeof c === 'object') {
+                                        if (c.type === 'tool_use' || c.type === 'tool_result' || c.type === 'thinking' || c.type === 'artifact' || c.type === 'redacted_thinking') {
+                                            return c;
+                                        }
+                                        if ('text' in c) return c.text;
+                                        // It's some unknown object, stringify it
+                                        return `> 🛠️ **Artifact:** \`${c.type || 'unknown'}\`\n\n\`\`\`json\n${JSON.stringify(c).substring(0, 5000)}\n\`\`\``;
+                                    }
+                                    return '';
+                                }).filter(Boolean);
+                            } else if (typeof msg.content === 'string') {
+                                contentParts = [msg.content];
+                            } else if (msg.text) {
+                                contentParts = [msg.text];
+                            }
+
+                            if (!mapping[msgId]) {
+                                mapping[msgId] = {
+                                    id: msgId,
+                                    parent: parentId,
+                                    children: [] as string[],
+                                    message: null
+                                };
+                            }
+                            
+                            mapping[msgId].parent = parentId;
+                            mapping[msgId].message = {
+                                id: msgId,
+                                author: { role, name: null, metadata: {} },
+                                create_time: createTime,
+                                update_time: updateTime,
+                                content: {
+                                    content_type: 'text',
+                                    parts: contentParts
+                                },
+                                status: "finished_successfully",
+                                end_turn: true,
+                                weight: 1,
+                                metadata: { model_slug: msg.model?.slug || msg.model || "claude" },
+                                recipient: "all"
+                            };
+                            
+                            // Prepare parent node if it doesn't exist yet
+                            if (parentId) {
+                                if (!mapping[parentId]) {
+                                    mapping[parentId] = {
+                                        id: parentId,
+                                        parent: null,
+                                        children: [],
+                                        message: null
+                                    };
+                                }
+                                if (!mapping[parentId].children.includes(msgId)) {
+                                    mapping[parentId].children.push(msgId);
+                                }
+                            }
+                        });
+                        
+                        // Find the leaf node (current_node)
+                        // A node is a leaf if it has no children. 
+                        // If multiple, pick the one with the latest create_time.
+                        let leafId = null;
+                        let maxTime = -1;
+                        Object.values(mapping).forEach((node: any) => {
+                            if (node.children.length === 0 && node.message) {
+                                if (node.message.create_time > maxTime) {
+                                    maxTime = node.message.create_time;
+                                    leafId = node.id;
+                                }
+                            }
+                        });
+
+
+                        let title = conv.name;
+                        if (!title || title.trim() === "") {
+                            // Find the first user message text
+                            const firstUserMsg = messages.find((m: any) => m.sender === 'human' && (m.text || (Array.isArray(m.content) && m.content.find((c:any) => c.text))));
+                            if (firstUserMsg) {
+                                let t = firstUserMsg.text;
+                                if (!t && Array.isArray(firstUserMsg.content)) {
+                                    const cItem = firstUserMsg.content.find((c:any) => c.text);
+                                    if (cItem) t = cItem.text;
+                                }
+                                if (t) {
+                                    title = t.substring(0, 50).replace(/\n/g, ' ').trim();
+                                    if (t.length > 50) title += "...";
+                                } else {
+                                    title = "Untitled Claude Chat";
+                                }
+                            } else {
+                                title = "Untitled Claude Chat";
+                            }
+                        }
+
+                        return {
+                            id: conv.uuid,
+                            title: title,
+                            create_time: conv.created_at ? new Date(conv.created_at).getTime() / 1000 : 0,
+                            update_time: conv.updated_at ? new Date(conv.updated_at).getTime() / 1000 : 0,
+                            mapping: mapping,
+                            current_node: leafId
+                        };
+                    }).filter((c: any) => c.current_node !== null && Object.keys(c.mapping).length > 0);
+                } else {
+                    // ChatGPT Parsing
+                    if (!Array.isArray(rawData)) {
+                        if (rawData.mapping) {
+                            data = [rawData];
+                        } else {
+                            throw new Error("Invalid ChatGPT JSON structure");
+                        }
                     } else {
-                        throw new Error("Invalid JSON structure");
+                        data = rawData;
                     }
                 }
 
-                const sorted = data.sort((a: any, b: any) => b.create_time - a.create_time);
+                const sorted = data.sort((a: any, b: any) => (b.create_time || 0) - (a.create_time || 0));
 
                 sorted.forEach((conv: any) => {
                     conv.models = extractModels(conv);
@@ -344,7 +484,8 @@ export const fileWorkerScript = () => {
                 self.postMessage({
                     type: 'SUCCESS',
                     conversations: sorted,
-                    searchIndex: index
+                    searchIndex: index,
+                    profileType
                 });
 
             } catch (error) {

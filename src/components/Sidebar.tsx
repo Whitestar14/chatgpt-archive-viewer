@@ -124,7 +124,7 @@ const SidebarListContent = React.memo(({
     return (
         <div 
             onScroll={handleScroll}
-            className="flex-1 overflow-y-auto min-h-0 custom-scrollbar pb-3 px-3 md:px-3"
+            className="flex-1 overflow-y-auto min-h-0 custom-scrollbar pb-3 px-3 md:px-4"
         >
             {pinnedList.length > 0 && !isSearchActive && (
                 <div className="mb-2">
@@ -380,6 +380,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     setVisibleCount(ITEMS_PER_PAGE);
   }, [searchTerm, dateFrom, dateTo, minMsg, maxMsg, filterModel, filterTools, filterImages, filterVoice, filterDictation]);
 
+
   const handleStartRename = useCallback((e: React.MouseEvent, profile: ProfileMeta) => {
       e.stopPropagation();
       setEditingProfileId(profile.id);
@@ -470,6 +471,16 @@ const Sidebar: React.FC<SidebarProps> = ({
     return { pinnedList: pinned, recentList: recents };
   }, [conversations, searchTerm, searchResults, pinnedIds, hiddenIds, dateFrom, dateTo, minMsg, maxMsg, filterModel, filterTools, filterImages, filterVoice, filterDictation, excludeArchivedSearch, activeCollectionId, collections]);
 
+  // Ensure active conversation is visible after a reload or selection change
+  useEffect(() => {
+      if (activeConversationId) {
+          const index = recentList.findIndex(c => String(c.originalIndex) === activeConversationId);
+          if (index !== -1 && index >= visibleCount) {
+              setVisibleCount(index + 20);
+          }
+      }
+  }, [activeConversationId, recentList, visibleCount]);
+
   useEffect(() => {
       const wasSearching = prevSearchTermRef.current.length > 0;
       prevSearchTermRef.current = searchTerm;
@@ -522,7 +533,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       <aside className={`fixed md:relative z-50 h-full flex flex-col bg-[#F9F9F9] dark:bg-[#1A1917] border-r border-gray-200 dark:border-[#2C2B28] transition-all duration-300 ease-in-out ${isSidebarOpen ? 'md:w-72 md:translate-x-0' : 'md:w-0 md:-translate-x-full md:overflow-hidden'} ${isMobileMenuOpen ? 'w-72 translate-x-0' : 'w-72 -translate-x-full md:translate-x-0'}`}>
         
         {/* Header - Matching SettingsView */}
-        <div className="px-3 py-5 flex items-center justify-between shrink-0">
+        <div className="px-6 py-5 flex items-center justify-between shrink-0">
             {isSelectionMode ? (
                  <div className="flex items-center justify-between w-full animate-in fade-in slide-in-from-top-1 duration-200">
                      <span className="font-semibold text-sm text-claude-accent">{selectedItems.size} Selected</span>
@@ -586,7 +597,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                     <div className="flex items-center">
                         <Plus 
                             onClick={(e) => { e.stopPropagation(); setShowCollectionModal(true); }} 
-                            className="w-4 h-4 md:opacity-0 group-hover:opacity-100 hover:text-claude-accent transition-all cursor-pointer mr-1" 
+                            className="w-4 h-4 opacity-0 group-hover:opacity-100 hover:text-claude-accent transition-all cursor-pointer mr-1" 
                         />
                         {isCollectionsExpanded ? <ChevronDown className="w-4 h-4 opacity-50" /> : <ChevronRight className="w-4 h-4 opacity-50" />}
                     </div>

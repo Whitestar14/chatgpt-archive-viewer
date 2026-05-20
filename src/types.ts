@@ -86,10 +86,14 @@ export interface Conversation {
 }
 
 export interface MessagePart {
-  type: 'text' | 'image' | 'audio' | 'video' | 'mixed';
+  type: 'text' | 'image' | 'audio' | 'video' | 'mixed' | 'tool_use' | 'tool_result' | 'thinking' | 'artifact';
   text?: string;
   assetUrl?: string;
   transcript?: string;
+  name?: string;
+  input?: any;
+  content?: any;
+  thinking?: string;
 }
 
 export interface SiblingInfo {

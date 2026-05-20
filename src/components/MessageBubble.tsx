@@ -201,7 +201,76 @@ const ThinkingBlock: React.FC<{ message: FormattedMessage }> = ({ message }) => 
     );
 };
 
+const PartThinkingBlock: React.FC<{ part: MessagePart }> = ({ part }) => {
+    const [isOpen, setIsOpen] = useState(false);
+    
+    // Determine Label and Content
+    let title = "Thinking";
+    let Icon = Brain;
+    let content = "";
+    
+    if (part.type === 'tool_use') {
+        Icon = Terminal;
+        let name = part.name || 'tool';
+        if (name.startsWith('web.') || name === 'web' || name === 'web_search') name = 'web';
+        if (name.startsWith('dalle')) name = 'dalle';
+        title = name;
+        content = JSON.stringify(part.input || {}, null, 2);
+    } else if (part.type === 'tool_result') {
+        Icon = Terminal;
+        title = 'Tool Result';
+        if (Array.isArray(part.content)) {
+            content = part.content.map((c: any) => c.text || c.title || '').join('\n');
+        } else if (typeof part.content === 'string') {
+            content = part.content;
+        } else {
+            content = JSON.stringify(part.content || {}, null, 2);
+        }
+    } else if (part.type === 'artifact' || part.type === 'redacted_thinking') {
+        title = part.type === 'redacted_thinking' ? 'Redacted Thinking' : 'Artifact';
+        Icon = Code;
+        content = typeof part.content === 'string' ? part.content : JSON.stringify(part.content || part, null, 2);
+    } else if (part.type === 'thinking') {
+        content = part.thinking || '';
+    }
+
+    if (!content || content.trim().length === 0) return null;
+
+    return (
+        <div className="flex flex-col items-start max-w-full my-3">
+            <button 
+                onClick={() => setIsOpen(!isOpen)}
+                className={`
+                    flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium transition-all select-none border
+                    ${isOpen 
+                        ? 'bg-[#F0EEE6] dark:bg-[#2F2E2B] text-gray-900 dark:text-gray-100 border-[#E5E5E5] dark:border-[#3F3E3B] mb-2' 
+                        : 'bg-transparent text-gray-500 dark:text-gray-400 border-transparent hover:bg-[#F0EEE6] dark:hover:bg-white/5 hover:text-gray-700 dark:hover:text-gray-300'
+                    }
+                `}
+            >
+                <Icon className="w-3.5 h-3.5" />
+                <span className="opacity-90">{title}</span>
+                <ChevronDown className={`w-3 h-3 transition-transform ${isOpen ? 'rotate-180' : ''} opacity-50`} />
+            </button>
+            
+            {isOpen && (
+                <div className="w-full ml-1 pl-3 border-l-2 border-[#E5E5E5] dark:border-[#2C2B28] space-y-2 mb-2">
+                    <div className="p-3 bg-[#F9F9F9] dark:bg-[#1A1917] rounded-lg border border-[#E5E5E5] dark:border-[#3F3E3B] overflow-x-auto max-h-96">
+                        <pre className="text-xs font-mono text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-words">
+                            {content}
+                        </pre>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
 const PartRenderer: React.FC<{ part: MessagePart; isUser: boolean; isVisible: boolean; fontSize: string; fontFamily?: string }> = ({ part, isUser, isVisible, fontSize, fontFamily }) => {
+  if (part.type === 'tool_use' || part.type === 'tool_result' || part.type === 'thinking' || part.type === 'artifact' || part.type === 'redacted_thinking') {
+      return <PartThinkingBlock part={part} />;
+  }
+
   if (part.type === 'image') {
     return (
       <div className="my-4 max-w-md rounded-lg overflow-hidden border border-[#E5E5E5] dark:border-gray-700/50 shadow-sm bg-[#F9F9F9] dark:bg-black/20">

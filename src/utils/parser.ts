@@ -97,8 +97,10 @@ export const getConversationMessages = (conversation: Conversation, currentLeafI
 
         // CASE 1: Standard Parts Array
         if (content.parts && content.parts.length > 0) {
-            content.parts.forEach((part: ContentPart) => {
-              if (typeof part === 'string' || (typeof part === 'object' && 'text' in part && typeof part.text === 'string')) {
+            content.parts.forEach((part: any) => {
+              if (typeof part === 'object' && (part.type === 'tool_use' || part.type === 'tool_result' || part.type === 'thinking' || part.type === 'artifact' || part.type === 'redacted_thinking')) {
+                  messageParts.push(part);
+              } else if (typeof part === 'string' || (typeof part === 'object' && 'text' in part && typeof part.text === 'string')) {
                  let text = typeof part === 'string' ? part : part.text || '';
                  
                  // Apply citations if any

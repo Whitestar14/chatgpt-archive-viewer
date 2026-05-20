@@ -81,13 +81,13 @@ interface AppState {
 export const useStore = create<AppState>((set) => ({
   // Initial Data
   profiles: [],
-  activeProfileId: null,
+  activeProfileId: (typeof window !== 'undefined' && localStorage.getItem('archive_active_profile_id')) || null,
   conversations: [],
-  activeConversationId: null,
+  activeConversationId: (typeof window !== 'undefined' && localStorage.getItem('archive_active_conversation_id')) || null,
   secondaryConversationId: null,
   
   // Initial UI
-  currentView: 'chat',
+  currentView: (typeof window !== 'undefined' && localStorage.getItem('archive_current_view') as View) || 'chat',
   isSidebarOpen: true,
   isMobileMenuOpen: false,
   isProfileLoading: typeof window !== 'undefined' ? localStorage.getItem('archive_has_profiles') === 'true' : false,
@@ -109,12 +109,23 @@ export const useStore = create<AppState>((set) => ({
 
   // Setters
   setProfiles: (profiles) => set({ profiles }),
-  setActiveProfileId: (id) => set({ activeProfileId: id }),
+  setActiveProfileId: (id) => {
+      if (id) localStorage.setItem('archive_active_profile_id', id);
+      else localStorage.removeItem('archive_active_profile_id');
+      set({ activeProfileId: id });
+  },
   setConversations: (conversations) => set({ conversations }),
-  setActiveConversationId: (id) => set({ activeConversationId: id }),
+  setActiveConversationId: (id) => {
+      if (id) localStorage.setItem('archive_active_conversation_id', id);
+      else localStorage.removeItem('archive_active_conversation_id');
+      set({ activeConversationId: id });
+  },
   setSecondaryConversationId: (id) => set({ secondaryConversationId: id }),
   
-  setView: (view) => set({ currentView: view, isMobileMenuOpen: false }),
+  setView: (view) => {
+      localStorage.setItem('archive_current_view', view);
+      set({ currentView: view, isMobileMenuOpen: false });
+  },
   toggleSidebar: () => set((state) => ({ isSidebarOpen: !state.isSidebarOpen })),
   setSidebarOpen: (open) => set({ isSidebarOpen: open }),
   toggleMobileMenu: () => set((state) => ({ isMobileMenuOpen: !state.isMobileMenuOpen })),

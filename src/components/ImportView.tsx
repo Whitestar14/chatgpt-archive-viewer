@@ -58,7 +58,7 @@ const ImportView: React.FC<ImportViewProps> = ({ onFileSelect, isProcessing, isI
                         {isInitialSetup ? 'Welcome to Archive' : 'Import Data'}
                     </h2>
                     <p className="text-sm text-gray-500 dark:text-gray-400">
-                        Visualize your ChatGPT history offline. Secure, fast, and distraction-free.
+                        Visualize your ChatGPT or Claude history offline. Secure, fast, and distraction-free.
                     </p>
                 </div>
 
@@ -78,7 +78,7 @@ const ImportView: React.FC<ImportViewProps> = ({ onFileSelect, isProcessing, isI
                             <UploadCloud className="w-8 h-8" />
                         </div>
                         <p className="text-sm font-medium text-gray-900 dark:text-gray-200 mb-2">
-                            Drop conversations.json
+                            Drop `conversations.json`
                         </p>
                         <p className="text-xs text-gray-500 mb-6">
                             or click to browse
